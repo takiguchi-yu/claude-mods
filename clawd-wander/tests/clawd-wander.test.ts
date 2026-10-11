@@ -1,5 +1,5 @@
 import type { AgentInfo, AgentStatus, On } from 'claude-code'
-import { expect, mock, test } from 'claude-code/testing'
+import { expect, mock, test, type TestBody, type TestOptions } from 'claude-code/testing'
 
 import {
   actors,
@@ -2254,7 +2254,7 @@ test('surf R16・paint: どの形・x の偶奇でも、本体の橙と板の黄
  * 居眠りしないよう、設定の居眠りまでの秒数を 3600 にして呼ぶ
  * （終わらないツール呼び出しで起こしておく形は、呼び出しのフックが時間切れで外されるので使えない）
  */
-async function playsWithin($: Parameters<Parameters<typeof test>[1]>[0], on: On, minutes: number): Promise<boolean> {
+async function playsWithin($: Parameters<TestBody>[0], on: On, minutes: number): Promise<boolean> {
   const clock = mock.clock(on)
   beneath(on)
   on('agent.list', async () => ({ value: [] }))
@@ -2409,7 +2409,7 @@ test('squash R4・R5・R6・S2・S8: 押しつぶしの間は行列・波乗り�
 })
 
 /** 圧縮をテストから起こすためのプラグイン（会話を足す役と、CompactNow の呼び出しを合図に圧縮を起こす役） */
-const COMPACTION = {
+const COMPACTION: TestOptions = {
   ...STEADY,
   plugins: [
     {

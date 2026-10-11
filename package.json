@@ -1,0 +1,11 @@
+{
+  "name": "claude-mods",
+  "private": true,
+  "description": "Claude Code mods. 型検査のためだけの package.json（各 mod は Claude Code が直接読み込む）",
+  "scripts": {
+    "typecheck": "tsc -p clawd-wander"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2"
+  }
+}

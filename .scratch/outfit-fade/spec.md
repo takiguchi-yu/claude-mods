@@ -114,11 +114,10 @@ R13 [ALWAYS] 入れ替えの消えかけと、そのあとの現れかけの間�
   `hooks/sprite.ts`（薄い途中は飾りの白も浮かせて描く）、`hooks/register.ts`（tick で beginSwap）
 - 検証: `claude plugin test clawd-wander` 171 件すべて成功
 - 実機: `/reload-plugins` で読み直した mod をユーザーが帯で見て、「挙動は今のままでOK」と確認した
-- 未確認: `tsc` が環境に無く、型検査は通していない
 - コードレビュー（/code-review。2026-10-11）: 仕様 ID のずれ（コメント・テスト名）、契約の hold、置き換え元の仕様の注記、居眠りの先送り（R13 を足して直した）、
   押しつぶしの取りこぼし（捨てる仕様にして R12 に書いた）、`swap`・`dressUp` の名前（props の SWAP_FRAMES との衝突と中身とのずれ）を直した。
   `Member.swap` → `outfitSwap`、`dressUp` → `beginSwap`、`swapStep` → `outfitSwapStep`、`Swap` → `OutfitSwap`
 - 仕様に無かった振る舞い（そのまま認めた）: 飾りなしへ戻る入れ替えの消えかけで引っ込められたあと出されると、飾りを付けたまま現れ直し、歩ける次のコマにまた消え始める（引っ込めると outfitSwap を捨てるが outfit は残るため。wear は 0）。
   薄い途中の白を浮かせて描くのは、入れ替えだけでなく作業の終わりの消えかけにも効く（R4）
-- 申し送り: `tsc` が環境に無く、型検査は通していない（`tsc` の入った環境で `tsc -p clawd-wander` を実行して確かめる。このリポジトリの tests には、変更前から型エラーが 12 件あると 2026-10-09 の記録にある）
+- 型検査（2026-10-11 に typescript 7.0.2 を devDependency に入れて `npm run typecheck`）: hooks は型エラー 0 件。tests の 12 件（TS2344・TS2345・TS7006。この変更より前の a4c4fbf でも同じ 12 件）は、`TestBody` で `playsWithin` の `$` を、`TestOptions` で `COMPACTION` を型付けして解消し、全体で 0 件
 - 変えた振る舞い: outfits の R1 は「現れるときの 1/10」から「作業中の 1/450 /コマで、消えて飾り付きで現れ直す」に、R2 は「現れてから消えるまで同じ飾り」から「数秒で消えて飾りなしで現れ直す」になった
