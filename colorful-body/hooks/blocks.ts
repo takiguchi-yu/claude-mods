@@ -9,7 +9,7 @@ export type Block =
   | { kind: 'markdown'; text: string }
   | { kind: 'blank' }
 
-export type Span = { kind: 'text' | 'code'; bold: boolean; text: string }
+export type Span = { kind: 'text' | 'code'; bold: boolean; text: string; href?: string }
 
 const HEADING = /^(#{1,6})\s+(.*)$/
 const FENCE = /^\s*(```|~~~)/
@@ -109,7 +109,8 @@ export const splitBlocks = (source: string): Block[] => {
   return spaced(blocks)
 }
 
-// Inline scanner: **bold** may hold `code`; an unclosed marker stays literal.
+// Inline scanner: **bold** may hold `code`; [label](url) becomes a link; an unclosed marker stays literal.
+const MD_LINK = /^\[([^\]\n]+)\]\((https?:\/\/[^)\s]+|file:\/\/[^)\s]+)\)/
 export const splitSpans = (line: string): Span[] => {
   const spans: Span[] = []
   let buffer = ''
@@ -126,6 +127,11 @@ export const splitSpans = (line: string): Span[] => {
       flush()
       isBold = !isBold
       i += 1
+    } else if (ch === '[' && MD_LINK.test(line.slice(i))) {
+      flush()
+      const [whole = '', label = '', href = ''] = MD_LINK.exec(line.slice(i)) ?? []
+      spans.push({ kind: 'text', bold: isBold, text: label, href })
+      i += whole.length - 1
     } else if (ch === '`' && line.indexOf('`', i + 1) > i + 1) {
       flush()
       const end = line.indexOf('`', i + 1)

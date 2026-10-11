@@ -1,1 +1,13 @@
-{ "name": "colorful-body", "version": "0.1.0", "description": "Colors headings, bold text and inline code in assistant replies" }
+{
+  "name": "colorful-body",
+  "version": "0.1.0",
+  "description": "Colors headings, bold text and inline code in assistant replies",
+  "userConfig": {
+    "links": {
+      "type": "boolean",
+      "title": "Links",
+      "description": "Make URLs, [label](url) links and path-looking inline code clickable (OSC 8 hyperlinks). Off by default: where the terminal is not detected as supporting them (herdr, for one), Claude Code draws the text followed by the URL. Turn on in a terminal that supports OSC 8, with FORCE_HYPERLINK=1 if it is not detected.",
+      "default": false
+    }
+  }
+}

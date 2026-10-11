@@ -1,8 +1,10 @@
 import { splitSpans } from './blocks'
+import { linkify } from './links'
+import type { LinkContext } from './links'
 
 // A table drawn as glow draws it: header, a ─┼─ rule, rows split by │, cells
 // wrapped to column widths counted in terminal cells (wide characters = 2).
-export type Piece = { text: string; kind: 'text' | 'code'; bold: boolean }
+export type Piece = { text: string; kind: 'text' | 'code'; bold: boolean; href?: string }
 export type Line = Piece[]
 
 export const cellWidth = (ch: string): number => {
@@ -30,17 +32,18 @@ export const textWidth = (text: string): number => {
 
 const lineWidth = (line: Line) => line.reduce((sum, piece) => sum + textWidth(piece.text), 0)
 
-const piecesOf = (cell: string): Piece[] =>
-  splitSpans(cell).map(span => ({
+const piecesOf = (cell: string, ctx: LinkContext | undefined): Piece[] =>
+  (ctx === undefined ? splitSpans(cell) : linkify(splitSpans(cell), ctx)).map(span => ({
     kind: span.kind,
     bold: span.bold,
     text: span.kind === 'code' ? ` ${span.text} ` : span.text,
+    ...(span.href === undefined ? {} : { href: span.href }),
   }))
 
 // Greedy wrap over characters; a break prefers the last space on the line.
-const wrapCell = (cell: string, width: number): Line[] => {
+const wrapCell = (cell: string, width: number, ctx: LinkContext | undefined): Line[] => {
   const chars: { ch: string; piece: Piece }[] = []
-  for (const piece of piecesOf(cell)) for (const ch of piece.text) chars.push({ ch, piece })
+  for (const piece of piecesOf(cell, ctx)) for (const ch of piece.text) chars.push({ ch, piece })
 
   const rows: { ch: string; piece: Piece }[][] = []
   let row: { ch: string; piece: Piece }[] = []
@@ -68,8 +71,8 @@ const wrapCell = (cell: string, width: number): Line[] => {
     const line: Line = []
     for (const { ch, piece } of r) {
       const last = line[line.length - 1]
-      if (last !== undefined && last.kind === piece.kind && last.bold === piece.bold) last.text += ch
-      else line.push({ kind: piece.kind, bold: piece.bold, text: ch })
+      if (last !== undefined && last.kind === piece.kind && last.bold === piece.bold && last.href === piece.href) last.text += ch
+      else line.push({ kind: piece.kind, bold: piece.bold, text: ch, ...(piece.href === undefined ? {} : { href: piece.href }) })
     }
     return line
   })
@@ -77,10 +80,11 @@ const wrapCell = (cell: string, width: number): Line[] => {
 
 const plain = (text: string): Piece => ({ text, kind: 'text', bold: false })
 
-export const layoutTable = (rows: string[][], available: number): Line[] => {
+// ctx undefined: links off (no bare URL or path detection).
+export const layoutTable = (rows: string[][], available: number, ctx?: LinkContext): Line[] => {
   const columns = Math.max(...rows.map(r => r.length))
   const natural = Array.from({ length: columns }, (_, c) =>
-    Math.max(1, ...rows.map(r => lineWidth(piecesOf(r[c] ?? '')))),
+    Math.max(1, ...rows.map(r => lineWidth(piecesOf(r[c] ?? '', ctx)))),
   )
   const widths = [...natural]
   const free = available - 1 - 3 * (columns - 1)
@@ -92,7 +96,7 @@ export const layoutTable = (rows: string[][], available: number): Line[] => {
 
   const out: Line[] = []
   rows.forEach((row, rowIndex) => {
-    const cells = widths.map((w, c) => wrapCell(row[c] ?? '', w))
+    const cells = widths.map((w, c) => wrapCell(row[c] ?? '', w, ctx))
     const height = Math.max(...cells.map(c => c.length))
     for (let l = 0; l < height; l++) {
       const line: Line = [plain(' ')]

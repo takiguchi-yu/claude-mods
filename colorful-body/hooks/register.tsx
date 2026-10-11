@@ -1,6 +1,7 @@
 import type { Register } from 'claude-code'
 
 import { splitBlocks, splitSpans } from './blocks'
+import { linkify } from './links'
 import { layoutTable } from './table'
 
 // Colors follow glow's dark style (glamour): xterm-256 numbers in the comments.
@@ -10,25 +11,35 @@ const HEADING_COLOR = '#00afff' // 39
 const CODE_COLOR = '#ff5f5f' // 203
 const CODE_BACKGROUND = '#303030' // 236
 
-export const register: Register = on => {
-  on('ui.render', { component: 'AssistantMessage' }, ($, e, next) => {
+export const register: Register = (on, options) => {
+  const hasLinks = options.links === true
+
+  on('ui.render', { component: 'AssistantMessage' }, async ($, e, next) => {
     // Summaries and rewritten rows keep the engine's own drawing.
     if (e.props.isSummary) {
       return next(e)
     }
 
-    const { Box, Text, Markdown } = $.ui.resolve(e)
+    const { Box, Text, Markdown, Link } = $.ui.resolve(e)
+    const ctx = hasLinks ? { home: await $.env.get('HOME'), cwd: await $.session.cwd() } : undefined
     const blocks = splitBlocks(e.props.text)
     const available = (e.viewport?.columns ?? 100) - 4
 
+    // A piece of text, wrapped in a link (underlined) when it carries an href.
+    const isLink = (href: string | undefined): href is string => hasLinks && href !== undefined
+    const linked = (text: string, href: string | undefined) =>
+      isLink(href) ? <Link href={href}>{text}</Link> : text
+
     const spans = (text: string) =>
-      splitSpans(text).map((span, j) =>
+      (ctx === undefined ? splitSpans(text) : linkify(splitSpans(text), ctx)).map((span, j) =>
         span.kind === 'code' ? (
-          <Text key={`s${j}`} bold={span.bold} color={CODE_COLOR} backgroundColor={CODE_BACKGROUND}>
-            {` ${span.text} `}
+          <Text key={`s${j}`} bold={span.bold} underline={isLink(span.href)} color={CODE_COLOR} backgroundColor={CODE_BACKGROUND}>
+            {linked(` ${span.text} `, span.href)}
           </Text>
         ) : (
-          <Text key={`s${j}`} bold={span.bold}>{span.text}</Text>
+          <Text key={`s${j}`} bold={span.bold} underline={isLink(span.href)}>
+            {linked(span.text, span.href)}
+          </Text>
         ),
       )
 
@@ -40,12 +51,21 @@ export const register: Register = on => {
               return block.level === 1 ? (
                 <Box key={`b${i}`}>
                   <Text bold color={H1_COLOR} backgroundColor={H1_BACKGROUND}>
-                    {` ${block.text} `}
+                    {` ${splitSpans(block.text).map(span => span.text).join('')} `}
                   </Text>
                 </Box>
               ) : (
                 <Text key={`b${i}`} bold color={HEADING_COLOR}>
-                  {`${'#'.repeat(block.level)} ${block.text}`}
+                  {`${'#'.repeat(block.level)} `}
+                  {splitSpans(block.text).map((span, j) =>
+                    span.kind === 'code' ? (
+                      <Text key={`h${j}`} color={CODE_COLOR} backgroundColor={CODE_BACKGROUND}>
+                        {` ${span.text} `}
+                      </Text>
+                    ) : (
+                      span.text
+                    ),
+                  )}
                 </Text>
               )
             case 'item':
@@ -62,15 +82,17 @@ export const register: Register = on => {
             case 'table':
               return (
                 <Box key={`b${i}`} flexDirection="column">
-                  {layoutTable(block.rows, available).map((line, l) => (
+                  {layoutTable(block.rows, available, ctx).map((line, l) => (
                     <Text key={`l${l}`}>
                       {line.map((piece, p) =>
                         piece.kind === 'code' ? (
-                          <Text key={`p${p}`} bold={piece.bold} color={CODE_COLOR} backgroundColor={CODE_BACKGROUND}>
-                            {piece.text}
+                          <Text key={`p${p}`} bold={piece.bold} underline={isLink(piece.href)} color={CODE_COLOR} backgroundColor={CODE_BACKGROUND}>
+                            {linked(piece.text, piece.href)}
                           </Text>
                         ) : (
-                          <Text key={`p${p}`} bold={piece.bold}>{piece.text}</Text>
+                          <Text key={`p${p}`} bold={piece.bold} underline={isLink(piece.href)}>
+                            {linked(piece.text, piece.href)}
+                          </Text>
                         ),
                       )}
                     </Text>
