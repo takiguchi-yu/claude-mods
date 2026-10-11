@@ -105,7 +105,7 @@ export const layoutTable = (rows: string[][], available: number): Line[] => {
     }
     if (rowIndex === 0) {
       const rule = widths
-        .map((w, c) => '─'.repeat(w + (c === 0 || c === columns - 1 ? 1 : 2) + (columns === 1 ? 1 : 0)))
+        .map((w, c) => '─'.repeat(w + (c === columns - 1 && columns > 1 ? 1 : 2)))
         .join('┼')
       out.push([plain(rule)])
     }

@@ -29,7 +29,11 @@ test('table: wide characters count 2, header rule joins columns, narrow width wr
     layoutTable(rows, width).map(line => line.map(p => p.text).join(''))
   const wide = text([['タイミング', '内容'], ['x', 'y']], 80)
   expect(wide[0]).toBe(' タイミング │ 内容')
-  expect(wide[1]).toBe('───────────┼─────')
+  expect(wide[1]).toBe('────────────┼─────')
+  // the ┼ sits under the │ of the row above
+  const cellsBefore = (line: string | undefined, mark: string) =>
+    textWidth((line ?? '').slice(0, (line ?? '').indexOf(mark)))
+  expect(cellsBefore(wide[1], '┼')).toBe(cellsBefore(wide[0], '│'))
   const narrow = text([['a', 'one two three four five six']], 16)
   expect(narrow.length).toBeGreaterThan(1)
   expect(narrow.every(l => textWidth(l) <= 16)).toBe(true)
