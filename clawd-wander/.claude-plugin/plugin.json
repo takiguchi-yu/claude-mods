@@ -24,7 +24,7 @@
     "outfits": {
       "type": "boolean",
       "title": "Outfits",
-      "description": "Now and then (about 1 in 10 appearances), Clawd shows up wearing an outfit: a crown, shades, headphones or a little bird.",
+      "description": "While Clawd works, now and then he fades out and fades back in wearing an outfit (a crown, shades, headphones or a little bird), then fades out again and returns as himself a few seconds later.",
       "default": true
     }
   }

@@ -8,13 +8,14 @@
 // ツールを使っている間と、使い終えてからしばらく、そのツールの道具を持つ（wield・release。.scratch/props/spec.md）。
 // ときどき仲間が本体のあとを一列についていく（lineUp。.scratch/parade/spec.md）。
 // 本体がひとりのときは、ときどきひとり遊び（波乗り・蝶々）をする（startPlay・playStep。.scratch/play/spec.md）。
+// 本体は作業中にたまにふわっと消えて、飾りを付けて現れ直し、数秒したらまた消えて、飾りなしで現れ直す（beginSwap・outfitSwapStep。.scratch/outfit-fade/spec.md）。
 // テストが通ると紙吹雪を降らせ（celebrate。.scratch/cheer/spec.md）、会話の圧縮の間はぺしゃんこになる（squeeze・unsqueeze。.scratch/squash/spec.md）。
 // 先頭は常に本体（MAIN）。本体は消えても顔ぶれに残り、次に作業が始まると同じ場所に戻る。
 // Claude Code の API は知らない。
 
 import { FRIENDS, type MascotId, MASCOTS } from './mascots'
 import { begin, type Heading, type Parade, record, slot } from './parade'
-import { appear, elapse, GONE, look, type Presence, retreat } from './presence'
+import { appear, elapse, fadeOut, GONE, look, type Presence, retreat } from './presence'
 import { decay, grab, type Grip, PROP_FRAMES, propFor, type PropId, reach, relax } from './props'
 import { type Actor, type Emote, emoteReach, ORANGE } from './sprite'
 import { catchWave, ebb, fadeOf, recede, surge, SURF_PACE } from './surf'
@@ -22,7 +23,7 @@ import { flutter, GAP, launch, scare, WIDTH as BUTTERFLY_WIDTH } from './butterf
 import { type Play, PLAY_CHANCE, type PlayKind, playable } from './play'
 import { CHEER_FRAMES } from './cheer'
 import { liftOf, PRESSED, settle, type Squash, unpress } from './squash'
-import type { OutfitId } from './outfits'
+import { chooseOutfit, OUTFIT_CHANCE, OUTFIT_HOLD, type OutfitId } from './outfits'
 import { poseOf, start, step, type Wanderer } from './wander'
 
 export const MAIN = 'main'
@@ -55,8 +56,12 @@ export type Member = {
   readonly cheer: number
   /** 会話の圧縮で押しつぶされている・戻っている。null ならふつう（.scratch/squash/spec.md） */
   readonly squash: Squash | null
-  /** 飾り。本体だけが持ち、仲間は常に null（.scratch/outfits/spec.md の R4） */
+  /** いま付けている飾り。飾りなしは null。本体だけが付け、仲間は常に null（.scratch/outfits/spec.md の R4） */
   readonly outfit: OutfitId | null
+  /** 飾りを付けておく残りコマ数（outfit に null 以外があるとき。.scratch/outfit-fade/spec.md の R3） */
+  readonly wear: number
+  /** 入れ替え中: 消えきったあとに付ける飾り to（null なら飾りなし）と、付けておくコマ数 hold。入れ替え中でなければ null（R1・R2） */
+  readonly outfitSwap: OutfitSwap | null
 }
 
 /** 活動がこのコマ数途切れたら居眠りする（既定 60 秒） */
@@ -104,10 +109,13 @@ const CHASE_PACE = 3
 /** 行列が終わったあと、仲間が立ち止まるコマ数の範囲 */
 const PARADE_PAUSE = { min: 5, max: 15 }
 
+/** 入れ替えの行き先（Member.outfitSwap）。飾りなしへ戻る入れ替えは、付けておく長さを持たない（hold は 0） */
+export type OutfitSwap = { readonly to: OutfitId | null; readonly hold: number }
+
 export type Crew = readonly Member[]
 
 export const assemble = (): Crew => [
-  { id: MAIN, mascot: 'clawd', color: ORANGE, wanderer: start(), presence: GONE, idle: 0, busy: 0, startle: 0, prop: null, parade: null, play: null, cheer: 0, squash: null, outfit: null },
+  { id: MAIN, mascot: 'clawd', color: ORANGE, wanderer: start(), presence: GONE, idle: 0, busy: 0, startle: 0, prop: null, parade: null, play: null, cheer: 0, squash: null, outfit: null, wear: 0, outfitSwap: null },
 ]
 
 /** 消えかけも含めて、いまいるサブエージェントの数 */
@@ -126,11 +134,15 @@ export const wantsMain = (crew: Crew, isWorking: boolean): boolean => isWorking 
 /** 帯に描くものが 1 体でも残っているか（現れかけ・消えかけを含む） */
 export const isVisible = (crew: Crew): boolean => crew.some(m => m.presence.kind !== 'gone')
 
-const shown = (m: Member): Member => ({ ...m, presence: appear(m.presence) })
+// outfit-fade の R6: 入れ替え中の消えかけは、出すと言われても反転させない（消えきるまで待って、現れ直させる）
+const shown = (m: Member): Member => (m.outfitSwap !== null ? m : { ...m, presence: appear(m.presence) })
 const hidden = (m: Member): Member => {
   // props の R14・emotes の R13: 現れかけたばかりで引っ込めると、その場で消えきる。そのときは道具をしまい、呼び出しも数え直す
   const presence = retreat(m.presence)
-  return presence.kind === 'gone' ? { ...m, presence, prop: null, busy: 0 } : { ...m, presence }
+  // outfit-fade の R5・R10: 引っ込められたら入れ替えをやめ、消えきったら飾りも外す
+  return presence.kind === 'gone'
+    ? { ...m, presence, prop: null, busy: 0, outfit: null, wear: 0, outfitSwap: null }
+    : { ...m, presence, outfitSwap: null }
 }
 
 /** 置ける x の最大（ピクセル）。帯の幅 `canvas` から絵の幅を引いたもの */
@@ -158,15 +170,10 @@ const emoteOf = (m: Member, timing: Timing): Emote['kind'] | null =>
 const choose = <T>(items: readonly T[], random: () => number): T =>
   items[Math.min(items.length - 1, Math.floor(random() * items.length))]!
 
-/**
- * 本体の出入り。作業が始まればその場に現れ、終われば消えていく。
- * 消えきった状態から現れ始めるときは、dress があれば飾りを選び直す（.scratch/outfits/spec.md の R1・R2）
- */
-export function setMain(crew: Crew, isWorking: boolean, dress?: () => OutfitId | null): Crew {
+/** 本体の出入り。作業が始まればその場に現れ、終われば消えていく */
+export function setMain(crew: Crew, isWorking: boolean): Crew {
   const [main = assemble()[0]!, ...agents] = crew
-  if (!isWorking) return [hidden(main), ...agents]
-  const dressed = dress !== undefined && main.presence.kind === 'gone' ? { ...main, outfit: dress() } : main
-  return [shown(dressed), ...agents]
+  return [isWorking ? shown(main) : hidden(main), ...agents]
 }
 
 /**
@@ -198,7 +205,7 @@ export function sync(
     usedMascots.add(mascot)
     usedColors.add(color)
     const x = Math.floor(random() * (roomFor(mascot, canvas) + 1))
-    added.push(shown({ id, mascot, color, wanderer: { ...start(), x }, presence: GONE, idle: 0, busy: 0, startle: 0, prop: null, parade: null, play: null, cheer: 0, squash: null, outfit: null }))
+    added.push(shown({ id, mascot, color, wanderer: { ...start(), x }, presence: GONE, idle: 0, busy: 0, startle: 0, prop: null, parade: null, play: null, cheer: 0, squash: null, outfit: null, wear: 0, outfitSwap: null }))
   }
   // parade-rejoin の R8: 行列の間に来た仲間は、最後尾に続く歩けない仲間より前に入れる
   let at = kept.length
@@ -231,13 +238,18 @@ export function advance(crew: Crew, canvas: number, random: () => number, timing
     // 行列の間は本体も仲間も自分では歩かず、march で進む
     // play: ひとり遊びの間は自分では歩かず、playStep で動く
     const walks = canWalk(m, timing) && !marching && m.play === null
-    const presence = elapse(m.presence)
+    // outfit-fade: 飾りの入れ替え（消えきったら現れ直す・付けておく時間が尽きたら消え始める）。presence もここで決まる
+    const { presence, outfit, wear, outfitSwap } = outfitSwapStep(m, elapse(m.presence), timing)
     return {
       ...m,
+      outfit,
+      wear,
+      outfitSwap,
       wanderer: walks ? step(m.wanderer, roomFor(m.mascot, canvas), random) : m.wanderer,
       presence,
-      // emotes の R11: 呼び出しが動いている間は途切れを数えない（眠らない）
-      idle: isHere && m.busy === 0 ? m.idle + 1 : 0,
+      // emotes の R11: 呼び出しが動いている間は途切れを数えない（眠らない）。
+      // outfit-fade の R13: 入れ替えの消えかけと、そのあとの現れかけ（数え始めたあとに現れかけになったもの）も数え続ける
+      idle: m.busy === 0 && (isHere || m.outfitSwap !== null || (m.presence.kind === 'arriving' && m.idle > 0)) ? m.idle + 1 : 0,
       startle: Math.max(0, m.startle - 1),
       // props の R14・emotes の R13: 消えきったら、使っている呼び出しが残っていても道具をしまい、呼び出しも数え直す
       prop: presence.kind === 'gone' ? null : decay(m.prop),
@@ -252,6 +264,39 @@ export function advance(crew: Crew, canvas: number, random: () => number, timing
   if (main === undefined) return kept
   if (main.play !== null) return [playStep(main, friends.length > 0, canvas, random, timing), ...friends]
   return marching ? march(kept, canvas, random, timing) : kept
+}
+
+/**
+ * 飾りの入れ替えを 1 コマ進める（.scratch/outfit-fade/spec.md の S2・S6・S7・S10・S11）。`presence` は、このコマで elapse したあとの出入り。
+ * 入れ替え中の本体が消えきったら、決めておいた飾りで同じ場所に現れ直させる（R2）。飾りを付けている本体は、歩ける間だけ付けておく時間を数え、
+ * 尽きたら（ひとり遊びをしていなければ）消え始めさせる（R3）。消えきったら飾りを外す（R10）。乱数は使わない
+ */
+function outfitSwapStep(m: Member, presence: Presence, timing: Timing): Pick<Member, 'presence' | 'outfit' | 'wear' | 'outfitSwap'> {
+  const { outfit, wear, outfitSwap } = m
+  if (outfitSwap !== null) {
+    return presence.kind === 'gone' ? { presence: appear(GONE), outfit: outfitSwap.to, wear: outfitSwap.hold, outfitSwap: null } : { presence, outfit, wear, outfitSwap }
+  }
+  if (outfit === null) return { presence, outfit, wear: 0, outfitSwap }
+  if (presence.kind === 'gone') return { presence, outfit: null, wear: 0, outfitSwap }
+  if (!canWalk(m, timing)) return { presence, outfit, wear, outfitSwap }
+  if (wear > 1) return { presence, outfit, wear: wear - 1, outfitSwap }
+  if (m.play !== null || m.parade !== null) return { presence, outfit, wear: 1, outfitSwap }
+  return { presence: fadeOut(presence), outfit, wear: 0, outfitSwap: { to: null, hold: 0 } }
+}
+
+/**
+ * 歩ける本体が、ひとり遊びも行列もしておらず、飾りも付けておらず、入れ替え中でもないコマに、OUTFIT_CHANCE の確率で
+ * 入れ替えを始める（.scratch/outfit-fade/spec.md の R1・R9）。本体は跳ねずに消え始め、消えきったあとに付ける飾りと付けておく長さを、この順に選んでおく。
+ * 条件を満たさないときは random を呼ばない。設定で飾りが止められている（R7）なら、呼び出し元が呼ばない
+ */
+export function beginSwap(crew: Crew, random: () => number, timing: Timing = DEFAULT_TIMING): Crew {
+  const [main, ...friends] = crew
+  if (main === undefined || !canWalk(main, timing) || main.play !== null || main.parade !== null) return crew
+  if (main.outfit !== null || main.outfitSwap !== null) return crew
+  if (random() >= OUTFIT_CHANCE) return crew
+  const to = chooseOutfit(random)
+  const hold = between(random, OUTFIT_HOLD.min, OUTFIT_HOLD.max)
+  return [{ ...main, presence: fadeOut(main.presence), outfitSwap: { to, hold } }, ...friends]
 }
 
 /** 帯の広いほう（同じなら右）。本体が x にいて、置ける x の最大が room のとき */

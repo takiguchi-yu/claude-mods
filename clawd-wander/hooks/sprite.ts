@@ -164,18 +164,20 @@ export function paint(actors: readonly Actor[], columns: number): string {
         }),
       )
     }
-    // outfits の R5〜R13: 飾りの白。浮いている間は描かない。張り出す飾り（小鳥）は、驚いている・同じ側に道具を描くコマは描かない
+    // outfits の R5〜R13: 飾りの白。浮いている間は描かない。張り出す飾り（小鳥）は、驚いている・同じ側に道具を描くコマは描かない。
+    // outfit-fade の R4: ただし、薄くなっている途中（現れかけ・消えかけ）は、本体といっしょに浮かせて描く
     const tucked = look?.side !== undefined && (actor.emote?.kind === 'startle' || propSide === look.side)
-    if (look !== null && lift === 0 && !tucked) {
+    if (look !== null && (lift === 0 || opacity < 1) && !tucked) {
       const { align } = look
       const shift = align !== undefined && (((actor.x + align.column) % 2) + 2) % 2 === 1 ? align.nudge : 0
       for (const dot of look.dots) {
         const dx = dot.dx + shift
         const x = actor.x + dx
-        if (x < 0 || x >= width || dot.y < 0 || dot.y >= height) continue
+        const y = dot.y - lift
+        if (x < 0 || x >= width || y < 0 || y >= height) continue
         if (opacity < 1 && !keeps(dx, dot.y, opacity)) continue
-        dots.push(dot.y * width + x)
-        tinted.set(dot.y * width + x, OUTFIT_COLOR)
+        dots.push(y * width + x)
+        tinted.set(y * width + x, OUTFIT_COLOR)
       }
     }
     if (actor.surf !== undefined) {

@@ -55,6 +55,11 @@ export function retreat(p: Presence): Presence {
   }
 }
 
+/** 跳ねずに、そのまま消え始める（outfit-fade の R1・R3。入れ替えのための消え方）。いる者だけが対象 */
+export function fadeOut(p: Presence): Presence {
+  return p.kind === 'here' ? leaving(FADE_FRAMES) : p
+}
+
 /** 1 コマ進む（S3・S6・S9・S12・S15）。歩かせるかどうかは呼び出し側が決める */
 export function elapse(p: Presence): Presence {
   switch (p.kind) {

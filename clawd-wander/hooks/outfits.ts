@@ -1,19 +1,22 @@
-// Clawd の飾り（王冠・サングラス・ヘッドフォン・小鳥）。本体が現れるたびに 1 つ選ぶ（飾りなしもある）。
+// Clawd の飾り（王冠・サングラス・ヘッドフォン・小鳥）。作業中にたまに、Clawd がふわっと消えて、飾りを付けた姿でふわっと現れ直し、
+// 数秒したらまた消えて、飾りなしの姿で現れ直す（入れ替えは crew.ts。.scratch/outfit-fade/spec.md）。
 //
 // 飾りは白く塗る点（dots）と、本体から抜く点（holes。小鳥の細目）で表す。どちらも絵の左上からのピクセル位置。
 // 1 マス（2×2 ピクセル）は 2 色までしか描けず、空き・橙・白が同じマスに入ると崩れる。どの飾りも浮き 0 なら
 // x の偶奇によらず崩れない形にしてある。形だけでは守れないもの（小鳥）は align で偶数ピクセルにそろえる列を指定し、
 // 描く側が 1 ピクセルずらす。
-// 仕様は .scratch/outfits/spec.md。描画も顔ぶれも Claude Code の API も知らない。
+// 仕様は .scratch/outfits/spec.md（絵）と .scratch/outfit-fade/spec.md（付け外し）。描画も顔ぶれも Claude Code の API も知らない。
 
 import { CLAWD_EYES, type Facing, type Pose } from './mascots'
 
 export type OutfitId = 'crown' | 'shades' | 'headphones' | 'bird'
 
-/** R1 で選ぶ飾り */
+/** 入れ替えで付ける飾り（outfit-fade の R1） */
 const OUTFITS: readonly OutfitId[] = ['crown', 'shades', 'headphones', 'bird']
-/** 飾りを付けて現れる確率（R1）。主役は飾りなしの Clawd なので、たまにだけ付ける */
-export const OUTFIT_CHANCE = 1 / 10
+/** 飾り付きへの入れ替えを始める確率（飾りなしのとき 1 コマあたり。outfit-fade の R1）。主役は飾りなしの Clawd なので、平均およそ 45 秒に 1 回だけ */
+export const OUTFIT_CHANCE = 1 / 450
+/** 飾りを付けておくコマ数の範囲（outfit-fade の R3。現れ直してから 8〜15 秒） */
+export const OUTFIT_HOLD = { min: 80, max: 150 } as const
 
 /** 飾りの白 */
 export const OUTFIT_COLOR = 0xf2f0eb
@@ -31,14 +34,9 @@ export type Look = {
   readonly side?: 'left' | 'right'
 }
 
-/**
- * 飾りを選ぶ（R1）。乱数が 1 - OUTFIT_CHANCE 未満なら飾りなし。それ以上なら、残りの区間を 4 等分して飾りを 1 つ選ぶ
- */
-export function chooseOutfit(random: () => number): OutfitId | null {
-  const r = random()
-  const plain = 1 - OUTFIT_CHANCE
-  if (r < plain) return null
-  return OUTFITS[Math.min(OUTFITS.length - 1, Math.floor(((r - plain) / OUTFIT_CHANCE) * OUTFITS.length))]!
+/** 飾りを選ぶ。[0, 1) を 4 等分して 1 つ選ぶ */
+export function chooseOutfit(random: () => number): OutfitId {
+  return OUTFITS[Math.min(OUTFITS.length - 1, Math.floor(random() * OUTFITS.length))]!
 }
 
 /** 文字で描いた行（# が白）を点にする。rows[0] が y = top */

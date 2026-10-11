@@ -11,6 +11,7 @@ import {
   type Crew,
   DEFAULT_TIMING,
   disengage,
+  beginSwap,
   DOZE_FRAMES,
   engage,
   isVisible,
@@ -35,7 +36,7 @@ import {
 import { begin, record, slot, TRAIL } from '../hooks/parade'
 import { decay, grab, PROP_FRAMES, PROP_GAP, propBitmap, propFor, propPixels, reach, relax, runsTests, SWAP_FRAMES } from '../hooks/props'
 import { FRIENDS, MASCOT_HEIGHT, type MascotId, MASCOTS } from '../hooks/mascots'
-import { appear, elapse, FADE_FRAMES, GONE, HERE, LEAP_FRAMES, retreat } from '../hooks/presence'
+import { appear, elapse, fadeOut, FADE_FRAMES, GONE, HERE, LEAP_FRAMES, retreat } from '../hooks/presence'
 import { type Actor, BANG_COLOR, ORANGE, paint, SPRITE_ROWS } from '../hooks/sprite'
 import { poseOf, setOff, start, step, type Wanderer } from '../hooks/wander'
 import { EBB_FRAMES, MIN_RIDE, SURF_PACE, surfPixels, SWELL_FRAMES } from '../hooks/surf'
@@ -43,7 +44,7 @@ import { PLAY_CHANCE, playable } from '../hooks/play'
 import { butterflyPixels, CHASE_MAX, CHASE_MIN, GAP, launch, MIN_CHASE, WATCH_FRAMES } from '../hooks/butterfly'
 import { CHEER_FRAMES, confettiPixels } from '../hooks/cheer'
 import { flatten, SPRING_FRAMES } from '../hooks/squash'
-import { chooseOutfit, OUTFIT_CHANCE, OUTFIT_COLOR, type OutfitId, outfitLook } from '../hooks/outfits'
+import { chooseOutfit, OUTFIT_CHANCE, OUTFIT_COLOR, OUTFIT_HOLD, type OutfitId, outfitLook } from '../hooks/outfits'
 
 const PLUGIN = 'clawd-wander'
 const BLUE = 0x6a9bcc
@@ -2688,12 +2689,8 @@ const whites = (actor: Actor, columns = 20) =>
     line.flatMap((color, px) => (color === OUTFIT_COLOR ? [`${px - actor.x},${y}`] : [])),
   )
 
-test('outfits R1・契約 chooseOutfit: 9 割は飾りなし、残りの 1 割を 4 等分して王冠・サングラス・ヘッドフォン・小鳥を選ぶ', () => {
-  expect(OUTFIT_CHANCE).toBe(1 / 10)
-  expect([0, 0.5, 0.8999].map(r => chooseOutfit(() => r))).toEqual([null, null, null])
-  const picked = [0, 1, 2, 3].map(i => chooseOutfit(() => 0.9 + ((i + 0.5) / 4) * 0.1))
-  expect(picked).toEqual(['crown', 'shades', 'headphones', 'bird'])
-  expect(chooseOutfit(() => 0.9)).toBe('crown')
+test('outfit-fade 契約 chooseOutfit: [0, 1) を 4 等分して王冠・サングラス・ヘッドフォン・小鳥を選び、乱数は 1 回だけ呼ぶ', () => {
+  expect([0, 0.25, 0.5, 0.75].map(r => chooseOutfit(() => r))).toEqual(['crown', 'shades', 'headphones', 'bird'])
   expect(chooseOutfit(() => 0.99999)).toBe('bird')
   let calls = 0
   chooseOutfit(() => {
@@ -2703,47 +2700,169 @@ test('outfits R1・契約 chooseOutfit: 9 割は飾りなし、残りの 1 割�
   expect(calls).toBe(1)
 })
 
-test('outfits R1・R2・契約 setMain: 消えきった状態から現れ始めるときだけ選び、それ以外は変えない', () => {
-  let calls = 0
-  const dress = () => {
-    calls += 1
-    return 'crown' as const
-  }
-  // 現れ始めるときに選ぶ
-  let crew = setMain(assemble(), true, dress)
-  expect(crew[0]!.outfit).toBe('crown')
-  expect(calls).toBe(1)
-  // 現れかけ・いる間は選び直さない
-  crew = setMain(crew, true, () => 'bird')
-  crew = setMain(advanceBy(crew, FADE_FRAMES), true, () => 'bird')
-  expect(crew[0]!.outfit).toBe('crown')
-  // 跳ねる・消えかけから現れ直しても選び直さない
-  crew = setMain(advanceBy(setMain(crew, false), LEAP_FRAMES + 2), true, () => 'bird')
-  expect(crew[0]!.presence.kind).toBe('arriving')
-  expect(crew[0]!.outfit).toBe('crown')
-  // 消えきってから現れ直すと選び直す
-  crew = setMain(advanceBy(setMain(advanceBy(crew, FADE_FRAMES), false), LEAP_FRAMES + FADE_FRAMES), false)
-  expect(crew[0]!.presence.kind).toBe('gone')
-  expect(setMain(crew, true, () => 'bird')[0]!.outfit).toBe('bird')
-  // dress が無ければ、いまと同じ（飾りは変えない）
-  expect(setMain(assemble(), true)[0]!.outfit).toBeNull()
-  expect(setMain(crew, true)[0]!.outfit).toBe('crown')
-  // 引っ込めるときは dress を呼ばない
-  calls = 0
-  setMain(crew, false, dress)
-  expect(calls).toBe(0)
+/** 本体が「いる」顔ぶれ。飾りを付けて返す（付けておく残りは wear） */
+const wearing = (outfit: OutfitId | null, wear = 50, x = 50): Crew => [{ ...hereMain(x)[0]!, outfit, wear }]
+
+test('outfit-fade R1・S1・契約 beginSwap/OutfitSwap: 歩ける本体は OUTFIT_CHANCE の確率で、跳ねずに消え始め、消えきったあとの飾りと付けておく長さを選んでおく', () => {
+  expect(OUTFIT_CHANCE).toBe(1 / 450)
+  expect(OUTFIT_HOLD).toEqual({ min: 80, max: 150 })
+  // 確率を引き当てたら、飾り（0.6 → ヘッドフォン）と長さ（0 → 最短）をこの順に選ぶ
+  const main = beginSwap(hereMain(), seq(OUTFIT_CHANCE / 2, 0.6, 0))[0]!
+  expect(main.presence).toEqual({ kind: 'leaving', left: FADE_FRAMES })
+  expect(main.outfitSwap).toEqual({ to: 'headphones', hold: OUTFIT_HOLD.min })
+  expect(main.outfit).toBeNull()
+  expect(beginSwap(hereMain(), seq(OUTFIT_CHANCE / 2, 0.99999, 0.99999))[0]!.outfitSwap).toEqual({ to: 'bird', hold: OUTFIT_HOLD.max })
+  // 引き当てなければ変わらない
+  const calls: number[] = []
+  const miss = hereMain()
+  expect(beginSwap(miss, () => (calls.push(1), OUTFIT_CHANCE))).toBe(miss)
+  expect(calls.length).toBe(1)
 })
 
-test('outfits R4: 仲間は飾りを持たず、描く Actor にも付かない', () => {
-  const crew = advanceBy(sync(setMain(assemble(), true, () => 'crown'), ['a', 'b'], () => 0.3, 200), FADE_FRAMES, 200)
-  expect(crew.slice(1).map(m => m.outfit)).toEqual([null, null])
+test('outfit-fade R1・R9・S5・S9・契約 beginSwap: 始められない（いない・驚き・居眠り・押しつぶし・ひとり遊び・行列・飾り付き・入れ替え中）コマは、乱数を呼ばず何も変えない', () => {
+  const here = hereMain()[0]!
+  const crews: Crew[] = [
+    assemble(), // いない
+    setMain(assemble(), true), // 現れかけ
+    [{ ...here, startle: STARTLE_FRAMES }],
+    [{ ...here, idle: DOZE_FRAMES }],
+    squeeze(hereMain(), MAIN),
+    beginPlay(hereMain(), 'surf', 100, () => 0.5),
+    [{ ...here, parade: begin(here.wanderer.x, 'right', 200, 100) }],
+    wearing('crown'),
+    [{ ...here, presence: { kind: 'leaving', left: 5 }, outfitSwap: { to: 'bird', hold: 90 } }],
+  ]
+  for (const crew of crews) {
+    let calls = 0
+    expect(beginSwap(crew, () => (calls += 1, 0))).toBe(crew)
+    expect(calls).toBe(0)
+  }
+})
+
+test('outfit-fade R2・R4・S6・S7: 入れ替え中の本体は同じ場所で浮き上がりながら消え、消えきったら決めた飾りで、同じ場所に降りながら現れ直す', () => {
+  const started = beginSwap(hereMain(30), seq(OUTFIT_CHANCE / 2, 0.3, 0))
+  let crew = started
+  const seen: { kind: string; opacity?: number; lift?: number }[] = []
+  for (let i = 0; i < FADE_FRAMES; i += 1) {
+    const [a] = actors(crew)
+    seen.push({ kind: crew[0]!.presence.kind, opacity: a!.opacity, lift: a!.lift })
+    expect(a!.x).toBe(30)
+    expect('outfit' in a!).toBe(false) // 消えるあいだは飾りなしの姿のまま
+    crew = advance(crew, 200, () => 0.5)
+  }
+  expect(seen[0]).toEqual({ kind: 'leaving', opacity: 1, lift: 0 })
+  expect(Math.round(seen.at(-1)!.opacity! * FADE_FRAMES)).toBe(1)
+  expect(seen.at(-1)!.lift).toBeGreaterThanOrEqual(3)
+  // 消えきったコマで、飾り（0.3 → サングラス）を付けて現れ直す。位置は同じ
+  expect(crew[0]!.presence).toEqual({ kind: 'arriving', left: FADE_FRAMES })
+  expect(crew[0]!.outfit).toBe('shades')
+  expect(crew[0]!.wear).toBe(OUTFIT_HOLD.min)
+  expect(crew[0]!.outfitSwap).toBeNull()
+  expect(crew[0]!.wanderer.x).toBe(30)
+  const [arriving] = actors(crew)
+  expect(arriving).toMatchObject({ x: 30, outfit: 'shades', opacity: 0 })
+  // 現れ終えたら歩き出し、付けておく時間を数える
+  crew = advanceBy(crew, FADE_FRAMES, 200)
+  expect(crew[0]!.presence.kind).toBe('here')
+  expect(crew[0]!.outfit).toBe('shades')
+  expect(crew[0]!.wear).toBe(OUTFIT_HOLD.min)
+})
+
+test('outfit-fade R3・S10・S7: 付けておく時間が尽きたら消え始め、消えきったら飾りなしで同じ場所に現れ直す', () => {
+  let crew = wearing('crown', 3, 40)
+  crew = advance(crew, 200, () => 0.5) // wear 3 → 2
+  crew = advance(crew, 200, () => 0.5) // 2 → 1
+  expect(crew[0]!.presence.kind).toBe('here')
+  crew = advance(crew, 200, () => 0.5) // 尽きる: 跳ねずに消え始める
+  expect(crew[0]!.presence).toEqual({ kind: 'leaving', left: FADE_FRAMES })
+  expect(crew[0]!.outfitSwap).toEqual({ to: null, hold: 0 })
+  expect(actors(crew)[0]!.outfit).toBe('crown') // 消えるあいだは飾りを付けた姿のまま
+  const x = crew[0]!.wanderer.x
+  crew = advanceBy(crew, FADE_FRAMES, 200)
+  expect(crew[0]!.presence).toEqual({ kind: 'arriving', left: FADE_FRAMES })
+  expect(crew[0]!.outfit).toBeNull()
+  expect(crew[0]!.wanderer.x).toBe(x)
+  expect('outfit' in actors(crew)[0]!).toBe(false)
+})
+
+test('outfit-fade R3・S10: ひとり遊び・行列の間は、付けておく時間が尽きても消え始めず、残り 1 のまま待つ', () => {
+  const here = wearing('crown', 1)[0]!
+  const playing = beginPlay([here], 'surf', 200, () => 0.5)
+  const afterPlay = advance(playing, 200, () => 0.5)[0]!
+  expect(afterPlay.outfitSwap).toBeNull()
+  expect(afterPlay.wear).toBe(1)
+  const marching: Crew = [{ ...here, parade: begin(here.wanderer.x, 'right', 200, 100) }]
+  const afterParade = advance(marching, 200, () => 0.5)[0]!
+  expect(afterParade.outfitSwap).toBeNull()
+  expect(afterParade.wear).toBe(1)
+})
+
+test('outfit-fade R5・R6・S6・S8: 入れ替え中は、出すと言われても反転しない。引っ込められたら入れ替えをやめて消えきり、現れ直さない', () => {
+  const swapping = beginSwap(hereMain(), seq(OUTFIT_CHANCE / 2, 0.3, 0))
+  const mid = advanceBy(swapping, 4)
+  expect(mid[0]!.presence).toEqual({ kind: 'leaving', left: FADE_FRAMES - 4 })
+  // 出す: 反転せず、そのまま消え続ける
+  expect(setMain(mid, true)[0]!.presence).toEqual(mid[0]!.presence)
+  expect(setMain(mid, true)[0]!.outfitSwap).not.toBeNull()
+  // 引っ込める: 入れ替えをやめ、消えきったら飾りなしのまま、いなくなる
+  const stopped = setMain(mid, false)
+  expect(stopped[0]!.outfitSwap).toBeNull()
+  const gone = advanceBy(stopped, FADE_FRAMES)
+  expect(gone[0]!.presence.kind).toBe('gone')
+  expect(gone[0]!.outfit).toBeNull()
+  expect(advanceBy(gone, 5)[0]!.presence.kind).toBe('gone')
+})
+
+test('outfit-fade R10・S11・S12: 飾りを付けたまま本体が消えきったら、飾りを外す。次に現れたときは飾りなし', () => {
+  const gone = advanceBy(setMain(wearing('crown', 50), false), LEAP_FRAMES + FADE_FRAMES + 1)
+  expect(gone[0]!.presence.kind).toBe('gone')
+  expect(gone[0]!.outfit).toBeNull()
+  expect(gone[0]!.wear).toBe(0)
+  expect(setMain(gone, true)[0]!.outfit).toBeNull()
+  // 現れかけたばかりで引っ込められ、その場で消えきるときも外す
+  const arriving = setMain(assemble(), true)
+  const instantly = setMain([{ ...arriving[0]!, outfit: 'crown', wear: 50 }], false)
+  expect(instantly[0]!.presence.kind).toBe('gone')
+  expect(instantly[0]!.outfit).toBeNull()
+})
+
+test('outfit-fade R8・S2: 仲間は入れ替えず、飾りも持たず、描く Actor にも付かない', () => {
+  const crew = advanceBy(sync(wearing('crown'), ['a', 'b'], () => 0.3, 200), FADE_FRAMES, 200)
+  expect(crew.slice(1).map(m => [m.outfit, m.wear, m.outfitSwap])).toEqual([[null, 0, null], [null, 0, null]])
   const drawn = actors(crew)
   expect(drawn[0]!.outfit).toBe('crown')
   expect(drawn.slice(1).every(a => !('outfit' in a))).toBe(true)
 })
 
+test('outfit-fade S2・S3・S4: 飾りなしの本体は、毎コマ・消えきっても・引っ込められても飾りなしのまま', () => {
+  const plain = advanceBy(hereMain(), 20)
+  expect([plain[0]!.outfit, plain[0]!.wear, plain[0]!.outfitSwap]).toEqual([null, 0, null])
+  const gone = advanceBy(setMain(plain, false), LEAP_FRAMES + FADE_FRAMES + 1)
+  expect(gone[0]!.presence.kind).toBe('gone')
+  expect([gone[0]!.outfit, gone[0]!.wear, gone[0]!.outfitSwap]).toEqual([null, 0, null])
+  expect(setMain(plain, false)[0]!.outfit).toBeNull()
+})
+
+test('outfit-fade R13: 入れ替えの消えかけと現れかけの間も、居眠りまでの数えは進み続ける（居眠りが先送りにならない）', () => {
+  const started = beginSwap(hereMain(), seq(OUTFIT_CHANCE / 2, 0.3, 0))
+  const idleBefore = started[0]!.idle
+  const done = advanceBy(started, 2 * FADE_FRAMES, 200)
+  expect(done[0]!.presence.kind).toBe('here')
+  expect(done[0]!.idle).toBe(idleBefore + 2 * FADE_FRAMES)
+  // 作業の開始で現れるときは、これまでどおり 0 から数え始める
+  const fresh = advanceBy(setMain(assemble(), true), FADE_FRAMES)
+  expect(fresh[0]!.idle).toBe(0)
+})
+
 test('outfits R14: 飾りの無い本体の Actor には outfit が付かない', () => {
   expect('outfit' in actors(advanceBy(setMain(assemble(), true), FADE_FRAMES))[0]!).toBe(false)
+})
+
+test('outfit-fade 契約 fadeOut: いる者だけを、跳ねずに消えかけにする', () => {
+  expect(fadeOut(HERE)).toEqual({ kind: 'leaving', left: FADE_FRAMES })
+  expect(fadeOut(GONE)).toBe(GONE)
+  expect(fadeOut(appear(GONE))).toEqual(appear(GONE))
+  expect(fadeOut({ kind: 'leaving', left: 3 })).toEqual({ kind: 'leaving', left: 3 })
 })
 
 test('outfits R5・R12: 正面・直立の飾りは、表どおりの位置に白で描く', () => {
@@ -2839,7 +2958,20 @@ test('outfits R13: 薄くなっている間は、飾りの白も間引く', () =
   expect(faded).toBeLessThan(full)
 })
 
-test('outfits R3・register: outfits を false にすると、何度現れても飾りの白を描かない', { options: { play: false, outfits: false } }, async ($, on) => {
+test('outfit-fade R4: 薄くなっている途中（現れかけ・消えかけ）は、飾りの白も本体といっしょに浮かせて描き、帯の上端からはみ出す分は切る。濃さ 1 の浮きでは描かない', () => {
+  for (const outfit of OUTFIT_IDS) {
+    // 浮き 1: 飾りの 2 行目以降が 1 ピクセル上がって残る。浮き 4: すべて上端の外へ出る
+    expect(whites(clawd(4, { outfit, opacity: 0.99, lift: 1 })).length).toBeGreaterThan(0)
+    expect(whites(clawd(4, { outfit, opacity: 0.99, lift: 4 }))).toEqual([])
+    // 濃さ 1（跳ねる・ぽよん）の浮きは従来どおり描かない
+    expect(whites(clawd(4, { outfit, lift: 1 }))).toEqual([])
+  }
+})
+
+// 飾りは 1/450 /コマで付くので、10 秒（100 コマ）ずつ進めて何度も描かせる。居眠りすると付かないので、居眠りは止める
+const DOZE_OFF = 3600
+
+test('outfit-fade R7・register: outfits を false にすると、長く作業しても飾りの白を描かない', { options: { play: false, outfits: false, doze_seconds: DOZE_OFF } }, async ($, on) => {
   const clock = mock.clock(on)
   beneath(on)
   const frames: string[] = []
@@ -2848,18 +2980,13 @@ test('outfits R3・register: outfits を false にすると、何度現れても
     return { value: {} }
   })
   const ui = await $.ui.mount({ ...band(true, 40), surface: 'terminal' })
-  for (let i = 0; i < 6; i += 1) {
-    await ui.redraw(bandProps(true, 40))
-    await clock.advance(2000)
-    await ui.redraw(bandProps(false, 40))
-    await clock.advance(3000)
-  }
+  for (let i = 0; i < 30; i += 1) await clock.advance(10_000)
   expect(frames.length).toBeGreaterThan(0)
   expect(frames.some(cells => cellColors(cells).has(OUTFIT_COLOR))).toBe(false)
   await ui.unmount()
 })
 
-test('outfits R1・R3・register: outfits がオン（既定）なら、現れ直すうちに飾りの白を描く', { options: { play: false } }, async ($, on) => {
+test('outfit-fade R1〜R3・register: outfits がオン（既定）なら、作業中に本体が消えて飾り付きで現れ直し、また消えて飾りなしで戻る', { options: { play: false, doze_seconds: DOZE_OFF } }, async ($, on) => {
   const clock = mock.clock(on)
   beneath(on)
   const frames: string[] = []
@@ -2868,13 +2995,13 @@ test('outfits R1・R3・register: outfits がオン（既定）なら、現れ�
     return { value: {} }
   })
   const ui = await $.ui.mount({ ...band(true, 40), surface: 'terminal' })
-  // 1 回で飾りなしを引く確率は 9/10。200 回続けて引く確率は 10 億分の 1 未満
-  for (let i = 0; i < 200 && !frames.some(cells => cellColors(cells).has(OUTFIT_COLOR)); i += 1) {
-    await ui.redraw(bandProps(true, 40))
-    await clock.advance(2000)
-    await ui.redraw(bandProps(false, 40))
-    await clock.advance(3000)
-  }
-  expect(frames.some(cells => cellColors(cells).has(OUTFIT_COLOR))).toBe(true)
+  const white = (cells: string) => cellColors(cells).has(OUTFIT_COLOR)
+  // 1 コマで入れ替えを始める確率は 1/450。9300 コマ（15 分あまり）付かない確率は 10 億分の 1 未満
+  for (let i = 0; i < 100 && !frames.some(white); i += 1) await clock.advance(10_000)
+  expect(frames.some(white)).toBe(true)
+  // 飾り付きで現れ直してから外れるまでは、長くても 12 + 150 + 12 コマ。そのあと飾りなしのコマがある
+  const first = frames.findIndex(white)
+  await clock.advance(20_000)
+  expect(frames.slice(first).some(cells => !white(cells))).toBe(true)
   await ui.unmount()
 })
