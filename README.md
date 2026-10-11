@@ -7,6 +7,7 @@
 | mod | 内容 |
 | --- | --- |
 | [clawd-wander](clawd-wander/) | 作業中、プロンプトの上で Clawd とサブエージェントの仲間がうろうろする |
+| [colorful-body](colorful-body/) | 応答の本文を glow 風に描く（見出し・インラインコード・箇条書き・表に色を付ける） |
 
 ## インストール
 

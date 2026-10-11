@@ -11,6 +11,11 @@
       "name": "clawd-wander",
       "source": "./clawd-wander",
       "description": "While Claude works, Clawd and a friend per subagent wander in the band above the prompt."
+    },
+    {
+      "name": "colorful-body",
+      "source": "./colorful-body",
+      "description": "Draws assistant replies in glow's style: colored headings, inline code, bullets and tables."
     }
   ]
 }
