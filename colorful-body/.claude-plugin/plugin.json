@@ -8,6 +8,12 @@
       "title": "Links",
       "description": "Make URLs, [label](url) links and path-looking inline code clickable (OSC 8 hyperlinks). Off by default: where the terminal is not detected as supporting them (herdr, for one), Claude Code draws the text followed by the URL. Turn on in a terminal that supports OSC 8, with FORCE_HYPERLINK=1 if it is not detected.",
       "default": false
+    },
+    "frame": {
+      "type": "boolean",
+      "title": "Prompt frame",
+      "description": "Draw your own prompts in a right-aligned frame.",
+      "default": true
     }
   }
 }

@@ -1,6 +1,7 @@
 import type { Register } from 'claude-code'
 
 import { splitBlocks, splitSpans } from './blocks'
+import { frameWidth } from './frame'
 import { linkify } from './links'
 import { layoutTable } from './table'
 
@@ -10,9 +11,12 @@ const H1_BACKGROUND = '#5f5fff' // 63
 const HEADING_COLOR = '#00afff' // 39
 const CODE_COLOR = '#ff5f5f' // 203
 const CODE_BACKGROUND = '#303030' // 236
+const FRAME_BORDER = '#5f5fff' // 63
+const FRAME_BACKGROUND = '#1f1a3d'
 
 export const register: Register = (on, options) => {
   const hasLinks = options.links === true
+  const hasFrame = options.frame !== false
 
   on('ui.render', { component: 'AssistantMessage' }, async ($, e, next) => {
     // Summaries and rewritten rows keep the engine's own drawing.
@@ -120,6 +124,32 @@ export const register: Register = (on, options) => {
       </Box>
     ) : (
       body
+    )
+  })
+  // The person's own prompt, framed and right-aligned.
+  on('ui.render', { component: 'UserMessage' }, ($, e, next) => {
+    if (!hasFrame || e.props.origin.kind !== 'composer') {
+      return next(e)
+    }
+
+    const { Box, Text } = $.ui.resolve(e)
+    const width = frameWidth(e.props.text, e.viewport?.columns ?? 100)
+
+    return (
+      <Box width="100%" justifyContent="flex-end">
+        <Box
+          width={width}
+          flexDirection="column"
+          borderStyle="round"
+          borderColor={FRAME_BORDER}
+          backgroundColor={FRAME_BACKGROUND}
+          paddingX={1}
+        >
+          {e.props.text.split('\n').map((line, i) => (
+            <Text key={`u${i}`}>{line === '' ? ' ' : line}</Text>
+          ))}
+        </Box>
+      </Box>
     )
   })
 }
