@@ -1,7 +1,7 @@
 import type { Register } from 'claude-code'
 
 import { splitBlocks, splitSpans } from './blocks'
-import { frameWidth } from './frame'
+import { FRAME_LEFT, FRAME_RIGHT, frameBottom, frameRows, frameTop, frameWidth } from './frame'
 import { linkify } from './links'
 import { layoutTable } from './table'
 
@@ -137,17 +137,24 @@ export const register: Register = (on, options) => {
 
     return (
       <Box width="100%" justifyContent="flex-end">
-        <Box
-          width={width}
-          flexDirection="column"
-          borderStyle="round"
-          borderColor={FRAME_BORDER}
-          backgroundColor={FRAME_BACKGROUND}
-          paddingX={1}
-        >
-          {e.props.text.split('\n').map((line, i) => (
-            <Text key={`u${i}`}>{line === '' ? ' ' : line}</Text>
+        <Box width={width} flexDirection="column">
+          <Text color={FRAME_BORDER} backgroundColor={FRAME_BACKGROUND}>
+            {frameTop(width)}
+          </Text>
+          {frameRows(e.props.text, width).map((row, i) => (
+            <Text key={`u${i}`} backgroundColor={FRAME_BACKGROUND}>
+              <Text color={FRAME_BORDER} backgroundColor={FRAME_BACKGROUND}>
+                {FRAME_LEFT}
+              </Text>
+              <Text backgroundColor={FRAME_BACKGROUND}>{` ${row} `}</Text>
+              <Text color={FRAME_BORDER} backgroundColor={FRAME_BACKGROUND}>
+                {FRAME_RIGHT}
+              </Text>
+            </Text>
           ))}
+          <Text color={FRAME_BORDER} backgroundColor={FRAME_BACKGROUND}>
+            {frameBottom(width)}
+          </Text>
         </Box>
       </Box>
     )
