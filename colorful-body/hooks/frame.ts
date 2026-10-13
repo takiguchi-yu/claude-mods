@@ -12,8 +12,14 @@ export const frameWidth = (text: string, columns: number): number => {
 // plain rows and every cell, border included, can carry the background. Lines
 // are one-eighth blocks hugging the outer edge of their cell: a box-drawing
 // line sits mid-cell and leaves background showing outside it.
+// A one-eighth row measured 2px and a one-eighth column 1px (Ghostty), so a side made of one column
+// is half as thick as the top and bottom. Each side is two columns instead, one on each side of the
+// cell boundary: the outer cell (no background) holds the line's first pixel, the inner cell the second.
+// One-quarter blocks would not do: the L-shaped corners exist only in one-eighth.
+export const FRAME_OUTER_LEFT = '▕'
 export const FRAME_LEFT = '▏'
 export const FRAME_RIGHT = '▕'
+export const FRAME_OUTER_RIGHT = '▏'
 // The corners are the L-shaped eighth blocks (Symbols for Legacy Computing), so
 // the side lines run through the top and bottom rows up to the horizontal line.
 export const frameTop = (width: number): string => `\u{1FB7D}${'▔'.repeat(width - 2)}\u{1FB7E}`
