@@ -12,6 +12,8 @@ const HEADING_COLOR = '#00afff' // 39
 const CODE_COLOR = '#ff5f5f' // 203
 const CODE_BACKGROUND = '#303030' // 236
 const FRAME_BORDER = '#5f5fff' // 63
+// Table rules between body rows and between columns: a fixed dark gray, since dimColor barely shows on light gray text.
+const ROW_RULE_COLOR = '#444444' // 238
 const FRAME_BACKGROUND = '#1f1a3d'
 // Blank rows around the prompt frame, so it does not read as one block with the output before and the reply after.
 const FRAME_MARGIN_TOP = 1
@@ -99,7 +101,7 @@ export const register: Register = (on, options) => {
                             {linked(piece.text, piece.href)}
                           </Text>
                         ) : (
-                          <Text key={`p${p}`} bold={piece.bold} underline={isLink(piece.href)}>
+                          <Text key={`p${p}`} bold={piece.bold} color={piece.rule === true ? ROW_RULE_COLOR : undefined} underline={isLink(piece.href)}>
                             {linked(piece.text, piece.href)}
                           </Text>
                         ),

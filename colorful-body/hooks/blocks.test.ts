@@ -23,18 +23,27 @@ test('spans: bold may hold code; unclosed markers stay literal', async () => {
   expect(kinds('**')).toEqual(['text'])
 })
 
-test('table: wide characters count 2, header rule joins columns, narrow width wraps', async () => {
+test('table: wide characters count 2, header rule runs unbroken, body rule joins columns, narrow width wraps', async () => {
   expect(textWidth('日本a')).toBe(5)
   const text = (rows: string[][], width: number) =>
     layoutTable(rows, width).map(line => line.map(p => p.text).join(''))
-  const wide = text([['タイミング', '内容'], ['x', 'y']], 80)
+  const wide = text([['タイミング', '内容'], ['x', 'y'], ['z', 'w']], 80)
   expect(wide[0]).toBe(' タイミング │ 内容')
-  expect(wide[1]).toBe('────────────┼─────')
+  expect(wide[1]).toBe('──────────────────')
+  expect(wide[3]).toBe('────────────┼─────')
   // the ┼ sits under the │ of the row above
   const cellsBefore = (line: string | undefined, mark: string) =>
     textWidth((line ?? '').slice(0, (line ?? '').indexOf(mark)))
-  expect(cellsBefore(wide[1], '┼')).toBe(cellsBefore(wide[0], '│'))
+  expect(cellsBefore(wide[3], '┼')).toBe(cellsBefore(wide[0], '│'))
   const narrow = text([['a', 'one two three four five six']], 16)
   expect(narrow.length).toBeGreaterThan(1)
   expect(narrow.every(l => textWidth(l) <= 16)).toBe(true)
+})
+
+test('table: body rows are parted by a rule, none after the last row; only the header rule is in the text color', async () => {
+  const lines = layoutTable([['h1', 'h2'], ['a', 'b'], ['c', 'd'], ['e', 'f']], 80)
+  const text = lines.map(line => line.map(p => p.text).join(''))
+  expect(text).toEqual([' h1 │ h2', '────────', ' a  │ b ', '────┼───', ' c  │ d ', '────┼───', ' e  │ f '])
+  const ruled = lines.map(line => line.filter(p => p.rule === true).map(p => p.text).join(''))
+  expect(ruled).toEqual([' │ ', '', ' │ ', '────┼───', ' │ ', '────┼───', ' │ '])
 })

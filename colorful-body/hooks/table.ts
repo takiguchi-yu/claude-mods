@@ -2,9 +2,11 @@ import { splitSpans } from './blocks'
 import { linkify } from './links'
 import type { LinkContext } from './links'
 
-// A table drawn as glow draws it: header, a ─┼─ rule, rows split by │, cells
+// A table drawn as glow draws it: header, a ─── rule, rows split by │, cells
 // wrapped to column widths counted in terminal cells (wide characters = 2).
-export type Piece = { text: string; kind: 'text' | 'code'; bold: boolean; href?: string }
+// Body rows are parted by a ─┼─ rule; that rule and the │ are drawn in the
+// rule color (`rule`), the header rule in the text color.
+export type Piece = { text: string; kind: 'text' | 'code'; bold: boolean; href?: string; rule?: boolean }
 export type Line = Piece[]
 
 export const cellWidth = (ch: string): number => {
@@ -94,6 +96,10 @@ export const layoutTable = (rows: string[][], available: number, ctx?: LinkConte
     widths[widest] = (widths[widest] ?? 0) - 1
   }
 
+  const segments = widths.map((w, c) => '─'.repeat(w + (c === columns - 1 && columns > 1 ? 1 : 2)))
+  // The header rule runs unbroken over the gray │; a ┼ there mixes the two colors.
+  const headerRule = segments.join('─')
+  const rule = segments.join('┼')
   const out: Line[] = []
   rows.forEach((row, rowIndex) => {
     const cells = widths.map((w, c) => wrapCell(row[c] ?? '', w, ctx))
@@ -103,16 +109,12 @@ export const layoutTable = (rows: string[][], available: number, ctx?: LinkConte
       cells.forEach((cell, c) => {
         const part = cell[l] ?? []
         line.push(...part, plain(' '.repeat(Math.max(0, (widths[c] ?? 0) - lineWidth(part)))))
-        if (c < columns - 1) line.push(plain(' │ '))
+        if (c < columns - 1) line.push({ ...plain(' │ '), rule: true })
       })
       out.push(line)
     }
-    if (rowIndex === 0) {
-      const rule = widths
-        .map((w, c) => '─'.repeat(w + (c === columns - 1 && columns > 1 ? 1 : 2)))
-        .join('┼')
-      out.push([plain(rule)])
-    }
+    if (rowIndex === 0) out.push([plain(headerRule)])
+    else if (rowIndex < rows.length - 1) out.push([{ ...plain(rule), rule: true }])
   })
   return out
 }
