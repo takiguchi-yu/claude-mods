@@ -1,7 +1,6 @@
 import type { Register } from 'claude-code'
 
 import { splitBlocks, splitSpans } from './blocks'
-import { FRAME_LEFT, FRAME_OUTER_LEFT, FRAME_OUTER_RIGHT, FRAME_RIGHT, frameBottom, frameRows, frameTop, frameWidth } from './frame'
 import { linkify } from './links'
 import { layoutTable } from './table'
 
@@ -11,19 +10,11 @@ const H1_BACKGROUND = '#5f5fff' // 63
 const HEADING_COLOR = '#00afff' // 39
 const CODE_COLOR = '#ff5f5f' // 203
 const CODE_BACKGROUND = '#303030' // 236
-const FRAME_BORDER = '#5f5fff' // 63
 // Table rules between body rows and between columns: a fixed dark gray, since dimColor barely shows on light gray text.
 const ROW_RULE_COLOR = '#444444' // 238
-const FRAME_BACKGROUND = '#1f1a3d'
-// Blank rows around the prompt frame, so it does not read as one block with the output before and the reply after.
-const FRAME_MARGIN_TOP = 1
-const FRAME_MARGIN_BOTTOM = 1
-// Columns between the frame and the right edge. Padding on the full-width row, not margin on it: a margin would push the row past the screen.
-const FRAME_INSET_RIGHT = 1
 
 export const register: Register = (on, options) => {
   const hasLinks = options.links === true
-  const hasFrame = options.frame !== false
 
   on('ui.render', { component: 'AssistantMessage' }, async ($, e, next) => {
     // Summaries and rewritten rows keep the engine's own drawing.
@@ -131,49 +122,6 @@ export const register: Register = (on, options) => {
       </Box>
     ) : (
       body
-    )
-  })
-  // The person's own prompt, framed and right-aligned.
-  on('ui.render', { component: 'UserMessage' }, ($, e, next) => {
-    if (!hasFrame || e.props.origin.kind !== 'composer') {
-      return next(e)
-    }
-
-    const { Box, Text } = $.ui.resolve(e)
-    const width = frameWidth(e.props.text, e.viewport?.columns ?? 100)
-
-    // The outer cells carry no background: only the line's first pixel is drawn in them.
-    const edge = (glyph: string) => <Text color={FRAME_BORDER}>{glyph}</Text>
-    const bordered = (glyph: string) => (
-      <Text color={FRAME_BORDER} backgroundColor={FRAME_BACKGROUND}>
-        {glyph}
-      </Text>
-    )
-    const line = (key: string, inner: ReturnType<typeof bordered>) => (
-      <Text key={key}>
-        {edge(FRAME_OUTER_LEFT)}
-        {inner}
-        {edge(FRAME_OUTER_RIGHT)}
-      </Text>
-    )
-
-    return (
-      <Box width="100%" justifyContent="flex-end" paddingRight={FRAME_INSET_RIGHT} marginTop={FRAME_MARGIN_TOP} marginBottom={FRAME_MARGIN_BOTTOM}>
-        <Box width={width + 2} flexDirection="column">
-          {line('top', bordered(frameTop(width)))}
-          {frameRows(e.props.text, width).map((row, i) =>
-            line(
-              `u${i}`,
-              <Text backgroundColor={FRAME_BACKGROUND}>
-                {bordered(FRAME_LEFT)}
-                <Text backgroundColor={FRAME_BACKGROUND}>{` ${row} `}</Text>
-                {bordered(FRAME_RIGHT)}
-              </Text>,
-            ),
-          )}
-          {line('bottom', bordered(frameBottom(width)))}
-        </Box>
-      </Box>
     )
   })
 }
